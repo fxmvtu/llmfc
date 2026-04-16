@@ -8,6 +8,14 @@
     <uses-feature android:glEsVersion="0x00030000" android:required="false" />
 
     <application>
+        <!--
+          AIComposePlugin is a FcitxPluginService (extends Service), registered here
+          so the fcitx5 IME core can discover and bind to it at runtime.
+        -->
+        <service
+            android:name=".AIComposePlugin"
+            android:exported="true" />
+
         <!-- 设置页 Activity（后续实现） -->
         <activity
             android:name=".ui.AIComposeSettingsActivity"

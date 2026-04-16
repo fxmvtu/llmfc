@@ -59,17 +59,7 @@ class LlamaEngine {
         }
     }
 
-    /**
-     * Synchronous completion — blocks until full generation is done.
-     *
-     * @param prompt input text (e.g. Chinese pinyin without tones: "nihao")
-     * @param maxTokens maximum tokens to generate
-     * @return generated text (汉字)
-     */
-    fun complete(prompt: String, maxTokens: Int = 32): String {
-        check(_isLoaded.value) { "Model not loaded" }
-        return _completeNative(prompt, maxTokens)
-    }
+    // ─── Native method declarations ──────────────────────────────────────────
 
     /**
      * Streaming completion — calls [callback] for each generated token.

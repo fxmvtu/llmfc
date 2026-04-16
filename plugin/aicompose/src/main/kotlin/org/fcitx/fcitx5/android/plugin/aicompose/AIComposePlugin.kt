@@ -1,23 +1,22 @@
 package org.fcitx.fcitx5.android.plugin.aicompose
 
-import android.content.Context
 import android.util.Log
-import org.fcitx.fcitx5.android.plugin.aicompose.data.PluginData
-import org.fcitx.fcitx5.android.plugin.base.FcitxPlugin
-import org.fcitx.fcitx5.android.plugin.base.ui.AddonUI
+import org.fcitx.fcitx5.android.common.FcitxPluginService
 import java.io.File
 
 /**
  * AIComposePlugin — Fcitx5 plugin entry point.
  *
- * Registered via FcitxPlugin manifest entry, this class:
- * - Receives pinyin input from the IME
+ * Registered as a <service> in AndroidManifest.xml, this class:
+ * - Receives pinyin input from the IME via FcitxPluginService IPC
  * - Calls AIComposeEngine → LlamaEngine for LLM completion
  * - Returns candidate words to the Fcitx5 candidate view
+ *
+ * Architecture: extends FcitxPluginService (the standard base for all fcitx5
+ * Android plugins). The service lifecycle (start/stop) manages the plugin's
+ * connection to the fcitx5 IME core.
  */
-class AIComposePlugin private constructor(
-    private val context: Context
-) : FcitxPlugin() {
+class AIComposePlugin : FcitxPluginService() {
 
     private lateinit var llamaEngine: LlamaEngine
     private lateinit var engine: AIComposeEngine
@@ -29,14 +28,22 @@ class AIComposePlugin private constructor(
         Log.i(TAG, "AIComposePlugin created")
     }
 
-    override fun onDestroy() {
+    override fun start() {
+        // Called when the service is bound and the plugin should start providing
+        // functionality. The plugin is now ready to receive input via IPC.
+        Log.i(TAG, "AIComposePlugin started")
+    }
+
+    override fun stop() {
+        // Called when the service is unbound. Clean up in-flight inference.
         engine.destroy()
         llamaEngine.destroy()
-        super.onDestroy()
+        Log.i(TAG, "AIComposePlugin stopped")
     }
 
     /**
-     * Called by AIAddonUI (settings UI) when the user selects a model to load.
+     * Called by the settings UI (AIComposeSettingsActivity) when the user
+     * selects a model to load.
      */
     fun loadModel(modelPath: String, nCtx: Int = 2048, nThreads: Int = 4): Boolean {
         return llamaEngine.loadModel(modelPath, nCtx, nThreads)
@@ -45,7 +52,7 @@ class AIComposePlugin private constructor(
     fun isModelLoaded(): Boolean = llamaEngine.isLoaded.value
 
     fun getAvailableModels(): List<ModelInfo> {
-        val modelsDir = File(context.filesDir, "models")
+        val modelsDir = File(filesDir, "models")
         if (!modelsDir.exists()) return emptyList()
         return modelsDir.listFiles()
             ?.filter { it.extension == "gguf" }
@@ -53,26 +60,10 @@ class AIComposePlugin private constructor(
             ?: emptyList()
     }
 
-    // ─── Data ────────────────────────────────────────────────────────────────
-
-    override val data: PluginData = PluginData()
-
     // ─── Companion ───────────────────────────────────────────────────────────
 
     companion object {
         private const val TAG = "AIComposePlugin"
-
-        @Volatile
-        private var instance: AIComposePlugin? = null
-
-        fun getInstance(context: Context): AIComposePlugin {
-            return instance ?: synchronized(this) {
-                instance ?: AIComposePlugin(context.applicationContext).also {
-                    instance = it
-                    it.onCreate()
-                }
-            }
-        }
     }
 }
 
