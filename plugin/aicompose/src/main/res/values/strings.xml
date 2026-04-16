@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name_debug">LLM Compose (Debug)</string>
+    <string name="app_name_release">LLM Compose</string>
+
+    <!-- Settings -->
+    <string name="settings_title">LLM Compose 设置</string>
+    <string name="current_model">当前模型</string>
+    <string name="no_model_loaded">未加载模型</string>
+    <string name="load_model">加载模型</string>
+    <string name="unload_model">卸载模型</string>
+    <string name="model_source">模型来源</string>
+    <string name="builtin">内置模型</string>
+    <string name="download_from_hf">从 HuggingFace 下载</string>
+    <string name="inference_threads">推理线程数</string>
+    <string name="context_length">Context 长度</string>
+    <string name="enable_llm_compose">启用 LLM 补全</string>
+
+    <!-- Download -->
+    <string name="downloading">正在下载…</string>
+    <string name="download_complete">下载完成</string>
+    <string name="download_failed">下载失败</string>
+
+    <!-- Status -->
+    <string name="model_loaded">模型已加载</string>
+    <string name="model_unloaded">模型已卸载</string>
+    <string name="thinking">AI 思考中…</string>
+    <string name="llm_disabled">LLM 补全已关闭</string>
+</resources>

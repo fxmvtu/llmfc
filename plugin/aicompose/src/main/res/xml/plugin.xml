@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<plugin xmlns:android="http://schemas.android.com/apk/res/android">
+    <name>LLM Compose</name>
+    <description>端侧 LLM 实时补全输入法插件 — 基于 llama.cpp + GGUF 模型</description>
+    <version>0.1.0</version>
+    <package>org.fcitx.fcitx5.android.plugin.aicompose</package>
+
+    <!-- Entry point registered with Fcitx5 plugin system -->
+    <entry>org.fcitx.fcitx5.android.plugin.aicompose.AIComposePlugin</entry>
+
+    <!-- Native library -->
+    <lib>libaicompose.so</lib>
+
+    <!-- Required native libraries -->
+    <depends>libllama.so</depends>
+</plugin>
