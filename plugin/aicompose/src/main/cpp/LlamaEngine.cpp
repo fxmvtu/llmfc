@@ -239,9 +239,9 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeNative(
         if (token_str && token_str[0] != '\0') {
             output << token_str;
             generated++;
-        } else {
-            break;
         }
+        // else: blank token (e.g. whitespace/punctuation) — skip without breaking.
+        // Consistent with completeStreamNative behavior.
 
         // Prepare next decode
         if (!llama_decode(s_ctx, llama_batch_get_one(&next_token, 1))) {
