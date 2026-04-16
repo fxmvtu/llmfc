@@ -3,7 +3,7 @@
 > 项目：LLMFC — 端侧大模型接入小企鹅输入法（fcitx5-android + llama.cpp）
 > 仓库：`github.com/fxmvtu/llmfc`
 > 分支：main
-> Token：`ghp_XXXXX_REDACTED_XXXXX`
+> Token：`${GITHUB_TOKEN}`（通过环境变量传入，勿硬编码）
 
 ---
 
@@ -215,11 +215,11 @@ git -C /home/kokoro/workspace/llmfc branch
 git -C /home/kokoro/workspace/llmfc add .
 git -C /home/kokoro/workspace/llmfc commit -m "docs: add AGENT.md"
 
-# 推送到 GitHub
-git -C /home/kokoro/workspace/llmfc push https://ghp_XXXXX_REDACTED_XXXXX@github.com/fxmvtu/llmfc.git
+# 推送到 GitHub（token 从环境变量 GITHUB_TOKEN 读取）
+git -C /home/kokoro/workspace/llmfc push https://${GITHUB_TOKEN}@github.com/fxmvtu/llmfc.git
 
 # 设置 remote 自动认证（可选）
-git -C /home/kokoro/workspace/llmfc remote set-url origin https://ghp_XXXXX_REDACTED_XXXXX@github.com/fxmvtu/llmfc.git
+git -C /home/kokoro/workspace/llmfc remote set-url origin https://${GITHUB_TOKEN}@github.com/fxmvtu/llmfc.git
 ```
 
 ---
