@@ -87,12 +87,7 @@ class LlamaEngine {
     ): Job {
         check(_isLoaded.value) { "Model not loaded" }
         return inferenceScope.launch {
-            try {
-                _completeStreamNative(prompt, maxTokens, callback)
-            } finally {
-                // Ensure cancellation flag is cleared when stream ends normally
-                _cancelNative()
-            }
+            _completeStreamNative(prompt, maxTokens, callback)
         }.also { job ->
             // When the coroutine is cancelled (Job.cancel()), signal the
             // C++ side to stop early by setting the atomic cancellation flag.

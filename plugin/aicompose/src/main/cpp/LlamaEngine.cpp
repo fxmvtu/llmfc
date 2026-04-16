@@ -346,9 +346,10 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeStreamNative(
                 env->DeleteLocalRef(token_jstr);
             }
             generated++;
-        } else {
-            break;
         }
+        // else: blank token (e.g. whitespace/punctuation) — skip without breaking
+        // the loop. This prevents early termination when the model outputs
+        // spaces or punctuation mid-sentence.
 
         if (!llama_decode(s_ctx, llama_batch_get_one(&next_token, 1))) {
             break;

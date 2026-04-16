@@ -117,7 +117,11 @@ class AIComposeEngine(
      * 3. Strip spaces — the LLM prompt handles segmentation via explicit instruction
      *
      * e.g. "nv" → "nu", "lv" → "lu", "ni3 hao3" → "nihao"
+     *
+     * @PublishedApi so test code in the same module can access it without exposing
+     * a public API surface.
      */
+    @PublishedApi
     internal fun normalizePinyin(raw: String): String {
         return raw
             .replace(" ", "")

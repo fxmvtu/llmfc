@@ -74,6 +74,9 @@ fcitxComponent {
 }
 
 dependencies {
+    // llama.cpp: git submodule at ../../../llama.cpp
+    // Built as a static library (libllama.a) via CMake + externalNativeBuild
+    // (see src/main/cpp/CMakeLists.txt for build configuration)
     implementation(project(":lib:fcitx5"))
     implementation(project(":lib:plugin-base"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
