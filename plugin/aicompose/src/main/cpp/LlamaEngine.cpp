@@ -212,16 +212,19 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeNative(
     // Sampling params — deterministic for consistency
     struct llama_sampler_chain * chain = llama_sampler_chain_new();
     llama_sampler_chain_add(chain, llama_sampler_init_greedy());
-    llama_sampler_chain_add(chain, llama_sampler_init_grammar("", ""));
+    // Note: no grammar sampler here (consistent with completeStreamNative)
 
     std::ostringstream output;
     int generated = 0;
     int max_toks = maxTokens > 0 ? maxTokens : 32;
 
+    // Reset cancellation flag for this generation
+    s_cancelled.store(false);
+
     while (generated < max_toks) {
-        // Check cancellation flag
+        // Check cancellation flag — allows Job.cancel() / cancelNative() to stop mid-generation
         if (s_cancelled.load()) {
-            LOGI("Generation cancelled");
+            LOGI("completeNative cancelled at token %d", generated);
             break;
         }
 
@@ -332,11 +335,14 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeStreamNative(
 
         const char * token_str = llama_token_to_piece(s_model, next_token, true);
         if (token_str && token_str[0] != '\0') {
-            // Build Java String while still holding the lock to ensure
-            // thread-safe access to the callback
+            // Build Java String while still holding the lock for model/ctx safety,
+            // but release before the JNI callback to avoid potential deadlock when
+            // the Kotlin side tries to re-acquire s_mutex (e.g. in synchronized blocks).
             jstring token_jstr = env->NewStringUTF(token_str);
             if (token_jstr) {
+                lock.unlock();          // release lock before JNI callback
                 env->CallVoidMethod(callbackRef, onTokenMethod, token_jstr);
+                lock.lock();            // re-acquire for next iteration
                 env->DeleteLocalRef(token_jstr);
             }
             generated++;

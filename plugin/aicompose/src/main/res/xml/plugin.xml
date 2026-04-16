@@ -11,6 +11,10 @@
     <!-- Native library -->
     <lib>libaicompose.so</lib>
 
-    <!-- Required native libraries -->
-    <depends>llama</depends>
+    <!--
+      NOTE: llama.cpp is linked as a CMake library target (libllama.a) and is
+      included in libaicompose.so via static linkage — no plugin.xml <depends>
+      entry is needed or valid here. <depends> in Fcitx5 refers to plugin names,
+      not CMake targets.
+    -->
 </plugin>

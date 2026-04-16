@@ -14,7 +14,7 @@ android {
 
         ndk {
             version = "25c"  // Explicit NDK version — required by llama.cpp CMake
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            // NOTE: ABI filtering is handled by splits.abi below, not ndk.abiFilters
         }
 
         @Suppress("UnstableApiUsage")
