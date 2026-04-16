@@ -51,6 +51,9 @@ android {
         abi {
             isEnable = true
             reset()
+            // Only arm64-v8a — intentional for this build. 32-bit ARM (armeabi-v7a)
+            // is excluded because llama.cpp inference is slow on 32-bit and most
+            // devices running this plugin are 64-bit capable.
             include("arm64-v8a")
             isUniversalApk = false
         }
@@ -75,4 +78,8 @@ dependencies {
     implementation(project(":lib:plugin-base"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("androidx.annotation:annotation:1.7.1")
+
+    // Unit tests — Kotlin stdlib + JUnit 4
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 }

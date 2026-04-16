@@ -4,6 +4,9 @@
     <!-- 模型下载需要网络 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Vulkan / GPU 加速 — llama.cpp 可通过 GGML 使用 Vulkan 通用 GPU 计算 -->
+    <uses-feature android:glEsVersion="0x00030000" android:required="false" />
+
     <application>
         <!-- 设置页 Activity（后续实现） -->
         <activity
