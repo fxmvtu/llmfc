@@ -1,0 +1,6 @@
+[submodule "fcitx5-android"]
+	path = fcitx5-android
+	url = https://github.com/fcitx5-android/fcitx5-android
+[submodule "llama.cpp"]
+	path = llama.cpp
+	url = https://github.com/ggerganov/llama.cpp
