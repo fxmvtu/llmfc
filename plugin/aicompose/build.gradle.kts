@@ -12,27 +12,29 @@ android {
     defaultConfig {
         applicationId = "org.fcitx.fcitx5.android.plugin.aicompose"
 
+        ndk {
+            version = "25c"  // Explicit NDK version — required by llama.cpp CMake
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+
         @Suppress("UnstableApiUsage")
         externalNativeBuild {
             cmake {
                 targets("aicompose")
                 cppFlags += "-std=c++17"
-                argument("-DGGML_NATIVE=ON")
-                argument("-DGGML_OPENBLAS=OFF")
-                argument("-DGGML_ACCELERATE=OFF")
-                argument("-DGGML_STATIC=ON")
-                argument("-DCMAKE_POSITION_INDEPENDENT_CODE=ON")
+                arguments += listOf(
+                    "-DGGML_NATIVE=OFF",
+                    "-DGGML_OPENBLAS=OFF",
+                    "-DGGML_ACCELERATE=OFF",
+                    "-DGGML_STATIC=ON",
+                    "-DCMAKE_POSITION_INDEPENDENT_CODE=ON"
+                )
             }
-        }
-
-        ndk {
-            abiFilters += listOf("arm64-v8a")
         }
     }
 
     buildFeatures {
         resValues = true
-        prefab = true
     }
 
     buildTypes {
@@ -42,6 +44,15 @@ android {
         }
         debug {
             resValue("string", "app_name", "@string/app_name_debug")
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a")
+            isUniversalApk = false
         }
     }
 

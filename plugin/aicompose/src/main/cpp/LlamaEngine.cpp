@@ -4,6 +4,7 @@
 #include <atomic>
 #include <vector>
 #include <csignal>
+#include <mutex>
 
 // llama.cpp public headers
 #include "common/common.h"
@@ -14,12 +15,19 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// ─── Global state ─────────────────────────────────────────────────────────────
+// ─── Global state (protected by s_mutex) ────────────────────────────────────
 static struct llama_model * s_model = nullptr;
 static struct llama_context * s_ctx = nullptr;
-static struct llama_model_params s_mparams;
 static int s_n_ctx = 2048;
+static int s_n_threads = 0;
 static std::atomic<bool> s_model_loaded(false);
+
+// Cancellation flag — checked every token to support Job.cancel()
+static std::atomic<bool> s_cancelled(false);
+
+// Protects all model/context operations to prevent use-after-free
+// and ensure thread-safe concurrent calls to load/unload/complete
+static std::mutex s_mutex;
 
 // ─── JNI Helpers ─────────────────────────────────────────────────────────────
 static JNIEnv * getEnv(JavaVM *vm) {
@@ -30,22 +38,19 @@ static JNIEnv * getEnv(JavaVM *vm) {
     return env;
 }
 
-static jclass findClass(JNIEnv *env, const char *name) {
-    return env->FindClass(name);
-}
-
 // ─── llama.cpp inference helpers ─────────────────────────────────────────────
 
 static std::string generate_prompt(const char * input) {
-    // Simple prompt template for Chinese pinyin-to-character completion.
-    // The model receives a pinyin string and is asked to convert to Chinese.
-    // We use a minimal chat-templated prompt compatible with most instruct models.
+    // Prompt template for Chinese pinyin-to-character completion.
+    // Instructs the model to preserve spaces as word boundaries to help
+    // with word segmentation (e.g. "ni hao" → "你好", not misaligned).
     std::ostringstream oss;
     oss << "### Instruction:\n"
         << "Convert the following pinyin (without tones) to Chinese characters.\n"
+        << "Keep word boundaries as indicated by spaces.\n"
         << "Only output the Chinese characters, nothing else.\n\n"
         << "Pinyin: " << input << "\n\n"
-        << "Chinese:";
+        << "Chinese: ";
     return oss.str();
 }
 
@@ -56,7 +61,7 @@ static void llama_log_callback(enum ggml_log_level level, const char * text, voi
     }
 }
 
-// ─── JNI Implementations ─────────────────────────────────────────────────────
+// ─── Thread-safe model load ──────────────────────────────────────────────────
 
 extern "C" {
 
@@ -64,6 +69,8 @@ JNIEXPORT jboolean JNICALL
 Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_loadModelNative(
         JNIEnv *env, jobject thiz,
         jstring modelPath, jint nCtx, jint nThreads) {
+
+    std::lock_guard<std::mutex> lock(s_mutex);
 
     // Free any previous session
     if (s_ctx) {
@@ -85,23 +92,22 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_loadModelNative(
     LOGI("nCtx=%d nThreads=%d", nCtx, nThreads);
 
     s_n_ctx = nCtx > 0 ? nCtx : 2048;
-
-    // Configure model params
-    s_mparams = llama_model_default_params();
-    s_mparams.n_gpu_layers = 32;          // offload all layers to GPU (Vulkan via GGML)
-    s_mparams.use_mmap = true;
-    s_mparams.use_mlock = false;
-
-    // Override n_threads if user specified them
-    if (nThreads > 0) {
-        s_mparams.n_threads = nThreads;
-    }
+    s_n_threads = nThreads > 0 ? nThreads : 0;
 
     // Set llama log callback
     llama_log_set_callback(llama_log_callback, nullptr);
 
+    // Configure model params
+    struct llama_model_params mparams = llama_model_default_params();
+    mparams.n_gpu_layers = 32;       // offload all layers to GPU (Vulkan via GGML)
+    mparams.use_mmap = true;
+    mparams.use_mlock = false;
+    if (s_n_threads > 0) {
+        mparams.n_threads = s_n_threads;
+    }
+
     // Load model
-    s_model = llama_load_model_from_file(path, s_mparams);
+    s_model = llama_load_model_from_file(path, mparams);
     env->ReleaseStringUTFChars(modelPath, path);
 
     if (!s_model) {
@@ -114,7 +120,7 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_loadModelNative(
     // Create inference context
     struct llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx = s_n_ctx;
-    cparams.n_threads = nThreads > 0 ? nThreads : std::thread::hardware_concurrency();
+    cparams.n_threads = s_n_threads > 0 ? s_n_threads : std::thread::hardware_concurrency();
     cparams.no_perf = true;
 
     s_ctx = llama_new_context_with_model(s_model, cparams);
@@ -125,6 +131,7 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_loadModelNative(
         return JNI_FALSE;
     }
 
+    s_cancelled.store(false);
     LOGI("Context created. n_ctx=%d", llama_n_ctx(s_ctx));
     s_model_loaded.store(true);
     return JNI_TRUE;
@@ -134,7 +141,10 @@ JNIEXPORT void JNICALL
 Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_unloadModelNative(
         JNIEnv *env, jobject thiz) {
 
+    std::lock_guard<std::mutex> lock(s_mutex);
+
     s_model_loaded.store(false);
+    s_cancelled.store(true);
 
     if (s_ctx) {
         llama_free(s_ctx);
@@ -148,6 +158,15 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_unloadModelNative(
     LOGI("Model unloaded");
 }
 
+JNIEXPORT void JNICALL
+Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_cancelNative(
+        JNIEnv *env, jobject thiz) {
+    (void)env;
+    (void)thiz;
+    s_cancelled.store(true);
+    LOGI("Cancellation flag set");
+}
+
 JNIEXPORT jstring JNICALL
 Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeNative(
         JNIEnv *env, jobject thiz,
@@ -155,6 +174,12 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeNative(
 
     if (!s_model_loaded.load()) {
         LOGE("Model not loaded");
+        return env->NewStringUTF("");
+    }
+
+    std::lock_guard<std::mutex> lock(s_mutex);
+
+    if (!s_model_loaded.load()) {
         return env->NewStringUTF("");
     }
 
@@ -194,6 +219,12 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeNative(
     int max_toks = maxTokens > 0 ? maxTokens : 32;
 
     while (generated < max_toks) {
+        // Check cancellation flag
+        if (s_cancelled.load()) {
+            LOGI("Generation cancelled");
+            break;
+        }
+
         llama_token next_token = llama_sampler_sample(chain, s_ctx, -1);
 
         // Check for EOS
@@ -227,18 +258,40 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeStreamNative(
         JNIEnv *env, jobject thiz,
         jstring prompt, jint maxTokens, jobject callback) {
 
+    // Check model loaded (outside lock — atomic read)
     if (!s_model_loaded.load()) {
         LOGE("Model not loaded");
         return;
     }
 
-    // Get callback method
-    jclass callbackClass = env->GetObjectClass(callback);
-    jmethodID onTokenMethod = env->GetMethodID(callbackClass, "accept", "(Ljava/lang/String;)V");
+    // Create a global reference to the callback so it doesn't get GC'd
+    // during the potentially long streaming generation
+    jobject callbackRef = env->NewGlobalRef(callback);
+
+    // Look up invoke method each time (safe — method ID is per-class, not per-instance)
+    jclass callbackClass = env->GetObjectClass(callbackRef);
+    jmethodID onTokenMethod = env->GetMethodID(callbackClass, "invoke", "(Ljava/lang/String;)V");
     if (!onTokenMethod) {
-        LOGE("Callback method 'accept(String)' not found");
+        LOGE("Callback method 'invoke(String)' not found");
+        env->DeleteGlobalRef(callbackRef);
         return;
     }
+
+    // ── Hold the mutex for the entire streaming operation ──────────────────
+    // This prevents concurrent completeStream calls and guards against
+    // unloadModel being called while streaming is in progress (use-after-free).
+    std::unique_lock<std::mutex> lock(s_mutex);
+
+    // Re-check after acquiring lock (model could have been unloaded)
+    if (!s_model_loaded.load()) {
+        LOGE("Model unloaded during stream setup");
+        lock.unlock();
+        env->DeleteGlobalRef(callbackRef);
+        return;
+    }
+
+    // Reset cancellation flag for this generation
+    s_cancelled.store(false);
 
     const char * prompt_str = env->GetStringUTFChars(prompt, nullptr);
     std::string prompt_template = generate_prompt(prompt_str);
@@ -246,11 +299,15 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeStreamNative(
 
     std::vector<llama_token> tokens = ::llama_tokenize(s_model, prompt_template, true);
     if (tokens.empty() || (int)tokens.size() >= s_n_ctx - 4) {
+        lock.unlock();
+        env->DeleteGlobalRef(callbackRef);
         return;
     }
 
     llama_reset_timings(s_ctx);
     if (!llama_decode(s_ctx, llama_batch_get_one(tokens.data(), tokens.size()))) {
+        lock.unlock();
+        env->DeleteGlobalRef(callbackRef);
         return;
     }
 
@@ -261,6 +318,12 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeStreamNative(
     int max_toks = maxTokens > 0 ? maxTokens : 32;
 
     while (generated < max_toks) {
+        // Check cancellation flag — allows Job.cancel() to stop mid-generation
+        if (s_cancelled.load()) {
+            LOGI("Stream cancelled at token %d", generated);
+            break;
+        }
+
         llama_token next_token = llama_sampler_sample(chain, s_ctx, -1);
 
         if (llama_token_is_eog(s_model, next_token)) {
@@ -269,10 +332,13 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeStreamNative(
 
         const char * token_str = llama_token_to_piece(s_model, next_token, true);
         if (token_str && token_str[0] != '\0') {
-            // Convert token to Java String and call callback
+            // Build Java String while still holding the lock to ensure
+            // thread-safe access to the callback
             jstring token_jstr = env->NewStringUTF(token_str);
-            env->CallVoidMethod(callback, onTokenMethod, token_jstr);
-            env->DeleteLocalRef(token_jstr);
+            if (token_jstr) {
+                env->CallVoidMethod(callbackRef, onTokenMethod, token_jstr);
+                env->DeleteLocalRef(token_jstr);
+            }
             generated++;
         } else {
             break;
@@ -284,6 +350,8 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeStreamNative(
     }
 
     llama_sampler_free(chain);
+    lock.unlock();
+    env->DeleteGlobalRef(callbackRef);
 }
 
 } // extern "C"

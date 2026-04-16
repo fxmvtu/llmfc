@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
  * AIComposeEngine — orchestrates pinyin → LLM → candidate words.
  *
  * Integrates with the Fcitx5 input pipeline:
- *   1. Receives raw pinyin input (e.g. "nihao")
+ *   1. Receives raw pinyin input (e.g. "ni hao")
  *   2. Calls LlamaEngine for streaming completion
  *   3. Emits partial/complete Chinese strings as candidates
  */
@@ -39,9 +39,9 @@ class AIComposeEngine(
      * Given the current preedit (pinyin without tones), return AI completion candidates.
      * This is called by AIComposePlugin when the user pauses typing.
      *
-     * @param pinyinRaw raw pinyin string, e.g. "wozhongguo" or "nihao"
+     * @param pinyinRaw raw pinyin string, e.g. "wozhongguo" or "ni hao"
      * @param maxCandidates max number of candidate phrases to return
-     * @param callback called with each completed phrase
+     * @param callback called with each updated candidate list
      * @return a [Job] that can be cancelled if the user keeps typing
      */
     fun requestCompletion(
@@ -63,37 +63,43 @@ class AIComposeEngine(
         return scope.launch {
             _isGenerating.value = true
             try {
-                // Accumulate partial completions
-                val candidates = mutableListOf<String>()
+                // Accumulate output character by character
+                val buffer = StringBuilder()
                 val lock = Object()
-                var streamJob: Job? = null
 
-                streamJob = llamaEngine.completeStream(
+                llamaEngine.completeStream(
                     prompt = normalizePinyin(pinyinRaw),
                     maxTokens = 32
                 ) { token ->
-                    // token arrives on IO thread; switch to main for candidate list
+                    // token arrives on IO thread; switch to main for UI updates
                     scope.launch(Dispatchers.Main) {
                         synchronized(lock) {
-                            // Build incremental completion string
-                            val current = candidates.lastOrNull() ?: ""
-                            val updated = current + token
-                            if (candidates.isEmpty()) {
-                                candidates.add(updated)
+                            buffer.append(token)
+
+                            // Build multiple candidates at different lengths so the user
+                            // sees progressive options even before generation finishes.
+                            // Using fixed breakpoints avoids showing many duplicates.
+                            val output = buffer.toString()
+                            val breakpoints = listOf(4, 8, 12, 16, 20, 24, 28)
+                                .filter { it <= output.length }
+                                .take(maxCandidates - 1)
+
+                            val candidates = if (breakpoints.isEmpty()) {
+                                listOf(output.take(maxCandidates))
                             } else {
-                                candidates[candidates.lastIndex] = updated
+                                (breakpoints.map { output.take(it) } + output)
+                                    .distinct()
+                                    .take(maxCandidates)
                             }
-                            // Show top candidate as user types
-                            callback(candidates.map { it.take(20) }.distinct().take(maxCandidates))
+
+                            callback(candidates)
                         }
                     }
                 }
-
-                streamJob?.join()
             } finally {
                 _isGenerating.value = false
             }
-        }
+        }.also { job -> currentJob = job }
     }
 
     /**
@@ -105,13 +111,18 @@ class AIComposeEngine(
     }
 
     /**
-     * Strip tones and spaces from pinyin for LLM input.
-     * e.g. "ni3 hao3" → "nihao"
+     * Normalize pinyin for LLM input:
+     * 1. Strip tone numbers (e.g. "ni3 hao3" → "ni hao")
+     * 2. Convert "v" to "u" (ü used in nü, lü, etc.)
+     * 3. Strip spaces — the LLM prompt handles segmentation via explicit instruction
+     *
+     * e.g. "nv" → "nu", "lv" → "lu", "ni3 hao3" → "nihao"
      */
-    private fun normalizePinyin(raw: String): String {
+    internal fun normalizePinyin(raw: String): String {
         return raw
             .replace(" ", "")
-            .replace(Regex("[1234]"), "")  // strip tone numbers
+            .replace(Regex("[1234]"), "")   // strip tone numbers
+            .replace("v", "u")              // nü/lü → nu/lu (LLM input)
             .lowercase()
     }
 

@@ -47,9 +47,11 @@ class LlamaEngine {
 
     /**
      * Unload the currently loaded model and free memory.
+     * Also triggers cancellation of any in-progress streaming.
      */
     fun unloadModel() {
         if (_isLoaded.value) {
+            _cancelNative()          // signal cancellation before unload
             _unloadModelNative()
             _isLoaded.value = false
             _modelName.value = ""
@@ -85,7 +87,19 @@ class LlamaEngine {
     ): Job {
         check(_isLoaded.value) { "Model not loaded" }
         return inferenceScope.launch {
-            _completeStreamNative(prompt, maxTokens, callback)
+            try {
+                _completeStreamNative(prompt, maxTokens, callback)
+            } finally {
+                // Ensure cancellation flag is cleared when stream ends normally
+                _cancelNative()
+            }
+        }.also { job ->
+            // When the coroutine is cancelled (Job.cancel()), signal the
+            // C++ side to stop early by setting the atomic cancellation flag.
+            // The C++ loop checks s_cancelled every token, so generation stops promptly.
+            job.invokeOnCompletion(cause = _) {
+                _cancelNative()
+            }
         }
     }
 
@@ -103,6 +117,12 @@ class LlamaEngine {
     private external fun _unloadModelNative()
     private external fun _completeNative(prompt: String, maxTokens: Int): String
     private external fun _completeStreamNative(prompt: String, maxTokens: Int, callback: (String) -> Unit)
+
+    /**
+     * Signal the C++ inference loop to stop at the next token boundary.
+     * Used by both [unloadModel] and [completeStream] cancellation.
+     */
+    private external fun _cancelNative()
 
     companion object {
         init {

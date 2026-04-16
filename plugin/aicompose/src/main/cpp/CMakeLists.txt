@@ -8,7 +8,7 @@ set(LLAMA_BUILD_DIR ${CMAKE_BINARY_DIR}/llama-build)
 
 # ─── llama.cpp build (static, header-only GGML backend) ───────────────────────
 set(LLAMA_CMAKE_ARGS
-    -DGGML_NATIVE=ON
+    -DGGML_NATIVE=OFF
     -DGGML_OPENBLAS=OFF
     -DGGML_ACCELERATE=OFF
     -DGGML_STATIC=ON
