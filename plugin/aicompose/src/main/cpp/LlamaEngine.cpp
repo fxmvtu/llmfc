@@ -92,7 +92,7 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_loadModelNative(
 
     // Configure model params
     struct llama_model_params mparams = llama_model_default_params();
-    mparams.n_gpu_layers = 32;       // offload all layers to GPU (Vulkan via GGML)
+    mparams.n_gpu_layers = 0;           // 0 = CPU only; set to 32 only if GGML_VULKAN=ON is configured
     mparams.use_mmap = true;
     mparams.use_mlock = false;
     // n_threads is now only in context_params, not model_params

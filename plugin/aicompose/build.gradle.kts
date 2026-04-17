@@ -22,12 +22,10 @@ android {
             cmake {
                 targets("aicompose")
                 cppFlags += "-std=c++17"
-                arguments += listOf(
-                    "-DGGML_NATIVE=OFF",
-                    "-DGGML_OPENBLAS=OFF",
-                    "-DGGML_ACCELERATE=OFF",
-                    "-DCMAKE_POSITION_INDEPENDENT_CODE=ON"
-                )
+                // CMake arguments are defined in src/main/cpp/CMakeLists.txt
+                // (LLAMA_CMAKE_ARGS variable), not here. Do not add GGML flags here —
+                // they would be prepended to LLAMA_CMAKE_ARGS and could override the
+                // authoritative values set in CMakeLists.txt.
             }
         }
     }

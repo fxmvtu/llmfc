@@ -7,11 +7,14 @@ set(LLAMA_CPP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../llama.cpp)
 set(LLAMA_BUILD_DIR ${CMAKE_BINARY_DIR}/llama-build)
 
 # ─── llama.cpp build (static, header-only GGML backend) ───────────────────────
+# NOTE: GGML_VULKAN is OFF by default — GPU acceleration requires NDK Vulkan
+# headers (vulkan.h, vk_mem_alloc.h) and a Vulkan-capable device at runtime.
+# Without those, llama.cpp falls back to CPU-only inference regardless of n_gpu_layers.
 set(LLAMA_CMAKE_ARGS
     -DGGML_NATIVE=OFF
     -DGGML_OPENBLAS=OFF
     -DGGML_ACCELERATE=OFF
-    -DGGML_NO_VULKAN=OFF
+    -DGGML_VULKAN=OFF
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DCMAKE_BUILD_TYPE=Release
     -DLLAMA_SHARED=OFF
