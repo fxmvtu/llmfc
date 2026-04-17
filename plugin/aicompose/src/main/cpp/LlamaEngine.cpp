@@ -45,12 +45,11 @@ static JNIEnv * getEnv(JavaVM *vm) {
 
 static std::string generate_prompt(const char * input) {
     // Prompt template for Chinese pinyin-to-character completion.
-    // Instructs the model to preserve spaces as word boundaries to help
-    // with word segmentation (e.g. "ni hao" → "你好", not misaligned).
+    // normalizePinyin strips spaces and tone numbers before this is called,
+    // so input is a continuous lowercase string like "nihao" or "wozhongguo".
     std::ostringstream oss;
     oss << "### Instruction:\n"
         << "Convert the following pinyin (without tones) to Chinese characters.\n"
-        << "Keep word boundaries as indicated by spaces.\n"
         << "Only output the Chinese characters, nothing else.\n\n"
         << "Pinyin: " << input << "\n\n"
         << "Chinese: ";
@@ -274,17 +273,24 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeStreamNative(
             if (token_jstr) {
                 lock.unlock();          // release lock before JNI callback
                 env->CallVoidMethod(callbackRef, onTokenMethod, token_jstr);
-                lock.lock();            // re-acquire for next iteration
                 env->DeleteLocalRef(token_jstr);
+                lock.lock();            // re-acquire for next iteration
+
+                // Check if model was unloaded during JNI callback (unlock window).
+                // If so, break to avoid llama_decode(s_ctx=nullptr) crash.
+                if (!s_model_loaded.load()) {
+                    LOGI("Model unloaded during streaming — exiting loop");
+                    break;
+                }
             }
             generated++;
-        }
-        // else: blank token (e.g. whitespace or punctuation) — skip without breaking
-        // the loop. This prevents early termination when the model outputs
-        // spaces or punctuation mid-sentence.
 
-        if (!llama_decode(s_ctx, llama_batch_get_one(&next_token, 1))) {
-            break;
+            // Decode the sampled token. s_ctx is still valid here because we
+            // re-acquired the lock above; unloadModelNative holds the mutex
+            // while freeing s_ctx, so it cannot race with this call.
+            if (!llama_decode(s_ctx, llama_batch_get_one(&next_token, 1))) {
+                break;
+            }
         }
     }
 

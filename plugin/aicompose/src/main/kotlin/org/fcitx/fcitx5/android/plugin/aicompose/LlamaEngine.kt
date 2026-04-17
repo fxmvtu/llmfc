@@ -83,6 +83,8 @@ class LlamaEngine {
             // C++ side to stop early by setting the atomic cancellation flag.
             // The C++ loop checks s_cancelled every token, so generation stops promptly.
             job.invokeOnCompletion {
+                // Idempotent: if unloadModel() ran first, s_cancelled is already true
+                // and setting it again has no effect.
                 _cancelNative()
             }
         }

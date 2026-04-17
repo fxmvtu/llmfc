@@ -54,6 +54,8 @@ class MainService : FcitxPluginService() {
 
         // Called from binder thread — must not block the main app's binder thread pool
         // Returns cached results from the last inference run, with partial-match fallback.
+        // Note: limit is applied by the caller via copyOf() — the cache always stores the
+        // full result from the last inference; different limit values share the same cache.
         override fun getSuggestions(pinyin: String?, limit: Int): Array<String> {
             if (pinyin.isNullOrBlank()) return emptyArray()
             suggestionLock.withLock {

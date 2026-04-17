@@ -22,7 +22,6 @@
         -->
         <service
             android:name=".MainService"
-            android:directBootAware="true"
             android:exported="true"
             android:permission="${mainApplicationId}.permission.PLUGIN"
             tools:targetApi="24">
