@@ -82,7 +82,7 @@ class LlamaEngine {
             // When the coroutine is cancelled (Job.cancel()), signal the
             // C++ side to stop early by setting the atomic cancellation flag.
             // The C++ loop checks s_cancelled every token, so generation stops promptly.
-            job.invokeOnCompletion(cause = _) {
+            job.invokeOnCompletion {
                 _cancelNative()
             }
         }
@@ -100,7 +100,6 @@ class LlamaEngine {
 
     private external fun _loadModelNative(modelPath: String, nCtx: Int, nThreads: Int): Boolean
     private external fun _unloadModelNative()
-    private external fun _completeNative(prompt: String, maxTokens: Int): String
     private external fun _completeStreamNative(prompt: String, maxTokens: Int, callback: (String) -> Unit)
 
     /**

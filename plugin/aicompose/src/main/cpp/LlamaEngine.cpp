@@ -5,10 +5,13 @@
 #include <vector>
 #include <csignal>
 #include <mutex>
+#include <sstream>
 
 // llama.cpp public headers
-#include "common/common.h"
 #include "llama.h"
+
+// Android logging
+#include <android/log.h>
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 #define LOG_TAG "LlamaEngine"
@@ -78,7 +81,7 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_loadModelNative(
         s_ctx = nullptr;
     }
     if (s_model) {
-        llama_free_model(s_model);
+        llama_model_free(s_model);
         s_model = nullptr;
     }
 
@@ -95,19 +98,17 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_loadModelNative(
     s_n_threads = nThreads > 0 ? nThreads : 0;
 
     // Set llama log callback
-    llama_log_set_callback(llama_log_callback, nullptr);
+    llama_log_set(llama_log_callback, nullptr);
 
     // Configure model params
     struct llama_model_params mparams = llama_model_default_params();
     mparams.n_gpu_layers = 32;       // offload all layers to GPU (Vulkan via GGML)
     mparams.use_mmap = true;
     mparams.use_mlock = false;
-    if (s_n_threads > 0) {
-        mparams.n_threads = s_n_threads;
-    }
+    // n_threads is now only in context_params, not model_params
 
-    // Load model
-    s_model = llama_load_model_from_file(path, mparams);
+    // Load model (new API)
+    s_model = llama_model_load_from_file(path, mparams);
     env->ReleaseStringUTFChars(modelPath, path);
 
     if (!s_model) {
@@ -115,22 +116,29 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_loadModelNative(
         return JNI_FALSE;
     }
 
-    LOGI("Model loaded successfully: %s", llama_model_desc(s_model));
+    char model_desc[256];
+    llama_model_desc(s_model, model_desc, sizeof(model_desc));
+    LOGI("Model loaded successfully: %s", model_desc);
 
-    // Create inference context
+    // Get vocab from model
+    const struct llama_vocab * vocab = llama_model_get_vocab(s_model);
+
+    // Create inference context (use new API)
     struct llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx = s_n_ctx;
-    cparams.n_threads = s_n_threads > 0 ? s_n_threads : std::thread::hardware_concurrency();
+    cparams.n_threads = s_n_threads > 0 ? s_n_threads : (int32_t)std::thread::hardware_concurrency();
+    cparams.n_threads_batch = cparams.n_threads;
     cparams.no_perf = true;
 
-    s_ctx = llama_new_context_with_model(s_model, cparams);
+    s_ctx = llama_init_from_model(s_model, cparams);
     if (!s_ctx) {
         LOGE("Failed to create context");
-        llama_free_model(s_model);
+        llama_model_free(s_model);
         s_model = nullptr;
         return JNI_FALSE;
     }
 
+    (void)vocab; // vocab is stored in the model, accessed via llama_model_get_vocab()
     s_cancelled.store(false);
     LOGI("Context created. n_ctx=%d", llama_n_ctx(s_ctx));
     s_model_loaded.store(true);
@@ -151,7 +159,7 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_unloadModelNative(
         s_ctx = nullptr;
     }
     if (s_model) {
-        llama_free_model(s_model);
+        llama_model_free(s_model);
         s_model = nullptr;
     }
 
@@ -187,10 +195,19 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeNative(
     std::string prompt_template = generate_prompt(prompt_str);
     env->ReleaseStringUTFChars(prompt, prompt_str);
 
-    // Tokenize the prompt
-    std::vector<llama_token> tokens = ::llama_tokenize(s_model, prompt_template, true);
-    if (tokens.empty()) {
-        LOGE("Failed to tokenize prompt");
+    // Get vocab from model
+    const struct llama_vocab * vocab = llama_model_get_vocab(s_model);
+
+    // Tokenize the prompt using vocab (signature: vocab, text, text_len, tokens, n_max, add_special, parse_special)
+    int n_tokens = llama_tokenize(vocab, prompt_template.c_str(), (int32_t)prompt_template.size(), nullptr, 0, true, true);
+    if (n_tokens <= 0) {
+        LOGE("Failed to tokenize prompt (size=%d)", n_tokens);
+        return env->NewStringUTF("");
+    }
+    std::vector<llama_token> tokens(n_tokens);
+    n_tokens = llama_tokenize(vocab, prompt_template.c_str(), (int32_t)prompt_template.size(), tokens.data(), (int32_t)n_tokens, true, true);
+    if (n_tokens <= 0) {
+        LOGE("Failed to tokenize prompt (size=%d)", n_tokens);
         return env->NewStringUTF("");
     }
 
@@ -200,9 +217,6 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeNative(
         return env->NewStringUTF("");
     }
 
-    // Reset context for new generation
-    llama_reset_timings(s_ctx);
-
     // Evaluate prompt
     if (!llama_decode(s_ctx, llama_batch_get_one(tokens.data(), tokens.size()))) {
         LOGE("Failed to evaluate prompt");
@@ -210,7 +224,9 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeNative(
     }
 
     // Sampling params — deterministic for consistency
-    struct llama_sampler_chain * chain = llama_sampler_chain_new();
+    struct llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
+    sparams.no_perf = true;
+    struct llama_sampler * chain = llama_sampler_chain_init(sparams);
     llama_sampler_chain_add(chain, llama_sampler_init_greedy());
     // Note: no grammar sampler here (consistent with completeStreamNative)
 
@@ -230,14 +246,15 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeNative(
 
         llama_token next_token = llama_sampler_sample(chain, s_ctx, -1);
 
-        // Check for EOS
-        if (llama_token_is_eog(s_model, next_token)) {
+        // Check for EOS using vocab
+        if (llama_vocab_is_eog(vocab, next_token)) {
             break;
         }
 
-        const char * token_str = llama_token_to_piece(s_model, next_token, true);
-        if (token_str && token_str[0] != '\0') {
-            output << token_str;
+        char token_buf[256];
+        int n_written = llama_token_to_piece(vocab, next_token, token_buf, sizeof(token_buf), 0, true);
+        if (n_written > 0) {
+            output << std::string(token_buf, n_written);
             generated++;
         }
         // else: blank token (e.g. whitespace/punctuation) — skip without breaking.
@@ -300,21 +317,33 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeStreamNative(
     std::string prompt_template = generate_prompt(prompt_str);
     env->ReleaseStringUTFChars(prompt, prompt_str);
 
-    std::vector<llama_token> tokens = ::llama_tokenize(s_model, prompt_template, true);
-    if (tokens.empty() || (int)tokens.size() >= s_n_ctx - 4) {
+    // Get vocab from model
+    const struct llama_vocab * vocab = llama_model_get_vocab(s_model);
+
+    // Tokenize the prompt (signature: vocab, text, text_len, tokens, n_max, add_special, parse_special)
+    int n_tokens = llama_tokenize(vocab, prompt_template.c_str(), (int32_t)prompt_template.size(), nullptr, 0, true, true);
+    if (n_tokens <= 0 || n_tokens >= s_n_ctx - 4) {
+        lock.unlock();
+        env->DeleteGlobalRef(callbackRef);
+        return;
+    }
+    std::vector<llama_token> tokens(n_tokens);
+    n_tokens = llama_tokenize(vocab, prompt_template.c_str(), (int32_t)prompt_template.size(), tokens.data(), (int32_t)n_tokens, true, true);
+    if (n_tokens <= 0) {
         lock.unlock();
         env->DeleteGlobalRef(callbackRef);
         return;
     }
 
-    llama_reset_timings(s_ctx);
     if (!llama_decode(s_ctx, llama_batch_get_one(tokens.data(), tokens.size()))) {
         lock.unlock();
         env->DeleteGlobalRef(callbackRef);
         return;
     }
 
-    struct llama_sampler_chain * chain = llama_sampler_chain_new();
+    struct llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
+    sparams.no_perf = true;
+    struct llama_sampler * chain = llama_sampler_chain_init(sparams);
     llama_sampler_chain_add(chain, llama_sampler_init_greedy());
 
     int generated = 0;
@@ -329,16 +358,17 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeStreamNative(
 
         llama_token next_token = llama_sampler_sample(chain, s_ctx, -1);
 
-        if (llama_token_is_eog(s_model, next_token)) {
+        if (llama_vocab_is_eog(vocab, next_token)) {
             break;
         }
 
-        const char * token_str = llama_token_to_piece(s_model, next_token, true);
-        if (token_str && token_str[0] != '\0') {
+        char token_buf[256];
+        int n_written = llama_token_to_piece(vocab, next_token, token_buf, sizeof(token_buf), 0, true);
+        if (n_written > 0) {
             // Build Java String while still holding the lock for model/ctx safety,
             // but release before the JNI callback to avoid potential deadlock when
             // the Kotlin side tries to re-acquire s_mutex (e.g. in synchronized blocks).
-            jstring token_jstr = env->NewStringUTF(token_str);
+            jstring token_jstr = env->NewStringUTF(std::string(token_buf, n_written).c_str());
             if (token_jstr) {
                 lock.unlock();          // release lock before JNI callback
                 env->CallVoidMethod(callbackRef, onTokenMethod, token_jstr);
@@ -347,7 +377,7 @@ Java_org_fcitx_fcitx5_android_plugin_aicompose_LlamaEngine_completeStreamNative(
             }
             generated++;
         }
-        // else: blank token (e.g. whitespace/punctuation) — skip without breaking
+        // else: blank token (e.g. whitespace or punctuation) — skip without breaking
         // the loop. This prevents early termination when the model outputs
         // spaces or punctuation mid-sentence.
 

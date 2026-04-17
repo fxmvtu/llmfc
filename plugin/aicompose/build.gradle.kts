@@ -26,7 +26,6 @@ android {
                     "-DGGML_NATIVE=OFF",
                     "-DGGML_OPENBLAS=OFF",
                     "-DGGML_ACCELERATE=OFF",
-                    "-DGGML_STATIC=ON",
                     "-DCMAKE_POSITION_INDEPENDENT_CODE=ON"
                 )
             }
@@ -81,6 +80,7 @@ dependencies {
     implementation(project(":lib:plugin-base"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("androidx.annotation:annotation:1.7.1")
+    implementation("androidx.appcompat:appcompat:1.6.1")
 
     // Unit tests — Kotlin stdlib + JUnit 4
     testImplementation("junit:junit:4.13.2")
