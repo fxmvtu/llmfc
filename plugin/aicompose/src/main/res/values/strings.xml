@@ -3,6 +3,9 @@
     <string name="app_name_debug">LLM Compose (Debug)</string>
     <string name="app_name_release">LLM Compose</string>
 
+    <!-- Plugin description (referenced by plugin.xml @string/description) -->
+    <string name="description">端侧 LLM 实时补全输入法插件 — 基于 llama.cpp + GGUF 模型</string>
+
     <!-- Settings -->
     <string name="settings_title">LLM Compose 设置</string>
     <string name="current_model">当前模型</string>

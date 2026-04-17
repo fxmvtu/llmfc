@@ -1,29 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<plugin xmlns:android="http://schemas.android.com/apk/res/android">
-    <name>LLM Compose</name>
-    <description>端侧 LLM 实时补全输入法插件 — 基于 llama.cpp + GGUF 模型</description>
-    <version>0.1.0</version>
-    <package>org.fcitx.fcitx5.android.plugin.aicompose</package>
-
-    <!-- API version — must match PluginDescriptor.pluginAPI in the app -->
+<plugin xmlns="../../../../../pluginSchema.xsd">
     <apiVersion>0.1</apiVersion>
-
-    <!--
-      hasService=true tells the app to bind to this plugin at startup,
-      so IInputSuggestions can be registered with FcitxRemoteService.
-    -->
+    <domain>fcitx5-aicompose</domain>
+    <description>@string/description</description>
     <hasService>true</hasService>
-
-    <!-- Entry point: MainService (FcitxPluginService) -->
-    <entry>org.fcitx.fcitx5.android.plugin.aicompose.MainService</entry>
-
-    <!-- Native library (contains llama.cpp linked as static lib) -->
-    <lib>libaicompose.so</lib>
-
-    <!--
-      NOTE: llama.cpp is linked as a CMake library target (libllama.a) and is
-      included in libaicompose.so via static linkage — no plugin.xml <depends>
-      entry is needed or valid here. <depends> in Fcitx5 refers to addon plugin names,
-      not CMake targets.
-    -->
 </plugin>
