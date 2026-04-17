@@ -53,17 +53,25 @@ class MainService : FcitxPluginService() {
         }
 
         // Called from binder thread — must not block the main app's binder thread pool
-        // Returns cached results from the last inference run
+        // Returns cached results from the last inference run, with partial-match fallback.
         override fun getSuggestions(pinyin: String?, limit: Int): Array<String> {
             if (pinyin.isNullOrBlank()) return emptyArray()
-            // If pinyin matches the cached result, return cached data immediately
-            // (avoid blocking — cache was populated by async triggerSuggestion)
             suggestionLock.withLock {
+                // Exact match — return immediately
                 if (pinyin == lastPinyin && cachedSuggestions.isNotEmpty()) {
-                    return cachedSuggestions.copyOf(minOf(limit, cachedSuggestions.size)) as Array<String>
+                    @Suppress("UNCHECKED_CAST")
+                    return (cachedSuggestions.copyOf(minOf(limit, cachedSuggestions.size)) as Array<String>)
+                }
+                // Partial-match fallback: if current pinyin starts with last pinyin,
+                // the cached suggestions may still be relevant (user added more chars).
+                // Return whatever we have, capped to limit.
+                if (lastPinyin.isNotEmpty() && pinyin.startsWith(lastPinyin) && cachedSuggestions.isNotEmpty()) {
+                    log("Partial match fallback for '$pinyin' (cached from '$lastPinyin')")
+                    @Suppress("UNCHECKED_CAST")
+                    return (cachedSuggestions.copyOf(minOf(limit, cachedSuggestions.size)) as Array<String>)
                 }
             }
-            // No cache or different pinyin — return empty (will be populated on next keystroke)
+            // No useful cache — return empty; next keystroke will trigger a new inference
             return emptyArray()
         }
 

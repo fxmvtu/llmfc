@@ -63,7 +63,6 @@ class AIComposeEngine(
         return scope.launch {
             _isGenerating.value = true
             try {
-                // Accumulate output character by character
                 val buffer = StringBuilder()
                 val lock = Object()
 
@@ -71,30 +70,29 @@ class AIComposeEngine(
                     prompt = normalizePinyin(pinyinRaw),
                     maxTokens = 32
                 ) { token ->
-                    // token arrives on IO thread; switch to main for UI updates
-                    scope.launch(Dispatchers.Main) {
-                        synchronized(lock) {
-                            buffer.append(token)
-
-                            // Build multiple candidates at different lengths so the user
-                            // sees progressive options even before generation finishes.
-                            // Using fixed breakpoints avoids showing many duplicates.
-                            val output = buffer.toString()
-                            val breakpoints = listOf(4, 8, 12, 16, 20, 24, 28)
-                                .filter { it <= output.length }
-                                .take(maxCandidates - 1)
-
-                            val candidates = if (breakpoints.isEmpty()) {
-                                listOf(output.take(maxCandidates))
-                            } else {
-                                (breakpoints.map { output.take(it) } + output)
-                                    .distinct()
-                                    .take(maxCandidates)
-                            }
-
-                            callback(candidates)
-                        }
+                    // Token arrives on IO thread; buffer.append must be synchronized.
+                    // scope is already Dispatchers.Main so we can update UI directly.
+                    val currentOutput: String
+                    synchronized(lock) {
+                        buffer.append(token)
+                        currentOutput = buffer.toString()
                     }
+
+                    // Candidate computation (pure Kotlin, no locks needed) runs on
+                    // Main dispatcher via scope.launch above.
+                    val breakpoints = listOf(4, 8, 12, 16, 20, 24, 28)
+                        .filter { it <= currentOutput.length }
+                        .take(maxCandidates - 1)
+
+                    val candidates = if (breakpoints.isEmpty()) {
+                        listOf(currentOutput.take(maxCandidates))
+                    } else {
+                        (breakpoints.map { currentOutput.take(it) } + currentOutput)
+                            .distinct()
+                            .take(maxCandidates)
+                    }
+
+                    callback(candidates)
                 }
             } finally {
                 _isGenerating.value = false
@@ -131,7 +129,7 @@ class AIComposeEngine(
     }
 
     fun destroy() {
-        cancelCurrent()
+        // cancelCurrent() is handled by serviceScope.cancel() in stop()
         scope.cancel()
     }
 }
