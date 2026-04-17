@@ -459,6 +459,9 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
     private fun requestAiSuggestions(preeditText: String) {
         val suggestions = FcitxRemoteService.getInputSuggestions() ?: return
         try {
+            // Fire-and-forget: pre-warm the cache asynchronously (oneway AIDL)
+            suggestions.onPreeditChanged(preeditText)
+            // Then immediately query (returns cached result from previous trigger)
             val result = suggestions.getSuggestions(preeditText, 5)
             if (result.isNotEmpty()) {
                 candidatesView?.injectSuggestions(result.toList())

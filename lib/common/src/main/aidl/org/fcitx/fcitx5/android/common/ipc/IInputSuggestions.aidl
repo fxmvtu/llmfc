@@ -15,6 +15,17 @@ interface IInputSuggestions {
     String[] getSuggestions(String pinyin, int limit);
 
     /**
+     * Pre-warm the suggestion cache with the current pinyin preedit.
+     * This is a fire-and-forget async trigger (oneway) — it schedules
+     * LLM inference in the background so subsequent getSuggestions() calls
+     * can return immediately from cache without blocking the caller.
+     *
+     * This separates the trigger path (keystroke → onPreeditChanged → async inference)
+     * from the query path (getSuggestions → synchronous cache read).
+     */
+    oneway void onPreeditChanged(String pinyin);
+
+    /**
      * Check if the suggestion engine is ready (model loaded).
      */
     boolean isReady();

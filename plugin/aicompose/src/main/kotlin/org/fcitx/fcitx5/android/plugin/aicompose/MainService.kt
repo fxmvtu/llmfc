@@ -43,6 +43,15 @@ class MainService : FcitxPluginService() {
     private var lastPinyin: String = ""
 
     private val suggestionsBinder = object : IInputSuggestions.Stub() {
+        // onPreeditChanged: fire-and-forget async trigger, pre-warms the cache.
+        // Runs on the binder thread pool — dispatch to serviceScope to avoid blocking.
+        override fun onPreeditChanged(pinyin: String?) {
+            if (pinyin.isNullOrBlank()) return
+            serviceScope.launch {
+                triggerSuggestion(pinyin)
+            }
+        }
+
         // Called from binder thread — must not block the main app's binder thread pool
         // Returns cached results from the last inference run
         override fun getSuggestions(pinyin: String?, limit: Int): Array<String> {
@@ -84,6 +93,8 @@ class MainService : FcitxPluginService() {
             connection.remoteService?.unregisterInputSuggestions(suggestionsBinder)
         }
         unbindService(connection)
+        // Cancel scope first so any in-flight triggerSuggestion coroutines are cancelled,
+        // then perform a single consolidated destroy of the engine and native state.
         serviceScope.cancel()
         engine.destroy()
         llamaEngine.destroy()
