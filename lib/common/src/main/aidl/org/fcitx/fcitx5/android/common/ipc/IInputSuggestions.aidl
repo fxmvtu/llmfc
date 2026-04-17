@@ -22,6 +22,10 @@ interface IInputSuggestions {
      *
      * This separates the trigger path (keystroke → onPreeditChanged → async inference)
      * from the query path (getSuggestions → synchronous cache read).
+     *
+     * NOTE: Because this is oneway, rapid consecutive calls will replace any
+     * pending inference for the previous pinyin — old results are discarded.
+     * This is the intended behaviour: only the most recent pinyin matters.
      */
     oneway void onPreeditChanged(String pinyin);
 

@@ -32,15 +32,6 @@ static std::atomic<bool> s_cancelled(false);
 // and ensure thread-safe concurrent calls to load/unload/complete
 static std::mutex s_mutex;
 
-// ─── JNI Helpers ─────────────────────────────────────────────────────────────
-static JNIEnv * getEnv(JavaVM *vm) {
-    JNIEnv * env;
-    if (vm->GetEnv((void **)&env, JNI_VERSION_1_6) != JNI_OK) {
-        return nullptr;
-    }
-    return env;
-}
-
 // ─── llama.cpp inference helpers ─────────────────────────────────────────────
 
 static std::string generate_prompt(const char * input) {
