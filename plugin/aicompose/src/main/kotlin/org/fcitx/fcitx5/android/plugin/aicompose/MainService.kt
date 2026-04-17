@@ -133,16 +133,6 @@ class MainService : FcitxPluginService() {
         }
     }
 
-    /**
-     * Called by the main app via IPC when the user has a pinyin preedit.
-     * Triggers async LLM inference so subsequent getSuggestions() calls are fast.
-     */
-    fun onPreeditChanged(pinyin: String) {
-        serviceScope.launch {
-            triggerSuggestion(pinyin)
-        }
-    }
-
     // ─── Public API (for Settings UI) ─────────────────────────────────────────
 
     fun isModelLoaded(): Boolean = llamaEngine.isLoaded.value
