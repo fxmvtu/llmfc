@@ -37,7 +37,7 @@ class AIComposeEngine(
 
     /**
      * Given the current preedit (pinyin without tones), return AI completion candidates.
-     * This is called by AIComposePlugin when the user pauses typing.
+     * This is called by MainService when the user pauses typing.
      *
      * @param pinyinRaw raw pinyin string, e.g. "wozhongguo" or "ni hao"
      * @param maxCandidates max number of candidate phrases to return

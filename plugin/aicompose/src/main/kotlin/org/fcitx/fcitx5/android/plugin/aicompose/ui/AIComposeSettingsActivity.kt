@@ -17,7 +17,7 @@ import com.google.android.material.textview.MaterialTextView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.fcitx.fcitx5.android.plugin.aicompose.AIComposePlugin
+import org.fcitx.fcitx5.android.plugin.aicompose.MainService
 import org.fcitx.fcitx5.android.plugin.aicompose.ModelInfo
 import org.fcitx.fcitx5.android.plugin.aicompose.R
 import java.io.File
@@ -28,7 +28,7 @@ import java.net.URL
  * Settings Activity for LLM Compose plugin.
  *
  * Manages:
- * - Model selection and loading / unloading (via AIComposePlugin singleton)
+ * - Model selection and loading / unloading (via MainService singleton)
  * - Inference parameters: nThreads, nCtx
  * - LLM completion enable/disable
  * - HuggingFace model download
@@ -140,7 +140,7 @@ class AIComposeSettingsActivity : AppCompatActivity() {
 
         // Load / Unload button
         btnLoadModel.setOnClickListener {
-            if (AIComposePlugin.isLoaded()) {
+            if (MainService.isLoaded()) {
                 unloadModel()
             } else {
                 val path = prefs.getString(PREF_LAST_MODEL, null)
@@ -162,7 +162,7 @@ class AIComposeSettingsActivity : AppCompatActivity() {
 
     private fun setupModelList() {
         rvModels.layoutManager = LinearLayoutManager(this)
-        val models = AIComposePlugin.getAvailableModelsStatic()
+        val models = MainService.getAvailableModelsStatic()
 
         if (models.isEmpty()) {
             rvModels.visibility = View.GONE
@@ -174,7 +174,7 @@ class AIComposeSettingsActivity : AppCompatActivity() {
                 prefs.edit { putString(PREF_LAST_MODEL, model.path) }
                 updateModelStatus()
                 // Auto-load when selected
-                if (!AIComposePlugin.isLoaded()) {
+                if (!MainService.isLoaded()) {
                     loadModel(model.path)
                 }
             }
@@ -192,7 +192,7 @@ class AIComposeSettingsActivity : AppCompatActivity() {
 
         // Run model loading on IO dispatcher — JNI call blocks
         lifecycleScope.launch(Dispatchers.IO) {
-            val ok = AIComposePlugin.loadModelStatic(path, nCtx, nThreads)
+            val ok = MainService.loadModelStatic(path, nCtx, nThreads)
             withContext(Dispatchers.Main) {
                 progressLoading.visibility = View.GONE
                 btnLoadModel.isEnabled = true
@@ -207,13 +207,13 @@ class AIComposeSettingsActivity : AppCompatActivity() {
     }
 
     private fun unloadModel() {
-        AIComposePlugin.unloadModelStatic()
+        MainService.unloadModelStatic()
         Toast.makeText(this, R.string.model_unloaded, Toast.LENGTH_SHORT).show()
         updateModelStatus()
     }
 
     private fun updateModelStatus() {
-        val loaded = AIComposePlugin.isLoaded()
+        val loaded = MainService.isLoaded()
         if (loaded) {
             val name = File(prefs.getString(PREF_LAST_MODEL, "") ?: "").nameWithoutExtension
             tvModelStatus.text = name.ifEmpty { getString(R.string.model_loaded) }

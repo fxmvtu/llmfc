@@ -18,6 +18,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.fcitx.fcitx5.android.common.ipc.IClipboardEntryTransformer
 import org.fcitx.fcitx5.android.common.ipc.IFcitxRemoteService
+import org.fcitx.fcitx5.android.common.ipc.IInputSuggestions
+import org.fcitx.fcitx5.android.core.FcitxEvent
 import org.fcitx.fcitx5.android.core.data.DataManager
 import org.fcitx.fcitx5.android.core.reloadPinyinDict
 import org.fcitx.fcitx5.android.core.reloadQuickPhrase
@@ -32,11 +34,14 @@ import java.util.PriorityQueue
 class FcitxRemoteService : Service() {
 
     private val clipboardTransformerLock = Mutex()
+    private val inputSuggestionsLock = Mutex()
 
     private val scope = MainScope() + CoroutineName("FcitxRemoteService")
 
     private val clipboardTransformers =
         PriorityQueue<IClipboardEntryTransformer>(3, compareByDescending { it.priority })
+
+    private var inputSuggestions: IInputSuggestions? = null
 
     private fun transformClipboard(source: String): String {
         var result = source
@@ -55,6 +60,10 @@ class FcitxRemoteService : Service() {
         ClipboardManager.transformer =
             if (clipboardTransformers.isEmpty()) null else ::transformClipboard
         Timber.d("All clipboard transformers: ${clipboardTransformers.joinToString { it.desc }}")
+    }
+
+    private suspend fun updateInputSuggestionsManager() = inputSuggestionsLock.withLock {
+        Timber.d("Input suggestions: ${if (inputSuggestions != null) "registered" else "none"}")
     }
 
     private val binder = object : IFcitxRemoteService.Stub() {
@@ -99,6 +108,31 @@ class FcitxRemoteService : Service() {
             }
         }
 
+        override fun registerInputSuggestions(suggestions: IInputSuggestions) {
+            Timber.d("registerInputSuggestions: $suggestions")
+            scope.launch {
+                suggestions.asBinder().linkToDeath({
+                    unregisterInputSuggestions(suggestions)
+                }, 0)
+                inputSuggestionsLock.withLock {
+                    inputSuggestions = suggestions
+                }
+                updateInputSuggestionsManager()
+            }
+        }
+
+        override fun unregisterInputSuggestions(suggestions: IInputSuggestions) {
+            Timber.d("unregisterInputSuggestions: $suggestions")
+            scope.launch {
+                inputSuggestionsLock.withLock {
+                    if (inputSuggestions == suggestions) {
+                        inputSuggestions = null
+                    }
+                }
+                updateInputSuggestionsManager()
+            }
+        }
+
         override fun reloadPinyinDict() {
             FcitxDaemon.getFirstConnectionOrNull()?.runIfReady { reloadPinyinDict() }
         }
@@ -118,7 +152,7 @@ class FcitxRemoteService : Service() {
         return binder
     }
 
-    override fun onUnbind(intent: Intent): Boolean {
+    override fun onUnbind(intent: Intent?): Boolean {
         Timber.d("FcitxRemoteService onUnbind: $intent")
         return super.onUnbind(intent)
     }
@@ -128,5 +162,20 @@ class FcitxRemoteService : Service() {
         scope.cancel()
         clipboardTransformers.clear()
         runBlocking { updateClipboardManager() }
+        runBlocking { inputSuggestionsLock.withLock { inputSuggestions = null } }
+        sInstance = null
+    }
+
+    companion object {
+        @Volatile
+        private var sInstance: FcitxRemoteService? = null
+
+        fun getInstance(): FcitxRemoteService? = sInstance
+
+        fun getInputSuggestions(): IInputSuggestions? = sInstance?.inputSuggestions
+    }
+
+    init {
+        sInstance = this
     }
 }

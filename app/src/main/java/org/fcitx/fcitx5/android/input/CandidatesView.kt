@@ -123,6 +123,29 @@ class CandidatesView(
         }
     }
 
+    /**
+     * Inject AI completion suggestions into the current candidate list.
+     * Called by FcitxInputMethodService when InputPanelEvent arrives with a preedit.
+     * The suggestions are prepended to the existing paged candidates.
+     */
+    fun injectSuggestions(suggestions: List<String>) {
+        if (suggestions.isEmpty()) return
+        val labelPrefix = "⚡ "
+        val aiCandidates = suggestions.take(5).map { text ->
+            FcitxEvent.Candidate(label = labelPrefix + text.take(8), text = text, comment = "AI")
+        }
+        val merged = if (paged.candidates.isEmpty()) {
+            aiCandidates.toTypedArray()
+        } else {
+            (aiCandidates + paged.candidates.toList()).toTypedArray()
+        }
+        paged = paged.copy(
+            candidates = merged,
+            hasNext = paged.hasNext || suggestions.size > 5
+        )
+        updateUi()
+    }
+
     private fun evaluateVisibility(): Boolean {
         return inputPanel.preedit.isNotEmpty() ||
                 paged.candidates.isNotEmpty() ||

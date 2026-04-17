@@ -77,6 +77,7 @@ import splitties.bitflags.hasFlag
 import splitties.dimensions.dp
 import splitties.resources.styledColor
 import timber.log.Timber
+import org.fcitx.fcitx5.android.FcitxRemoteService
 import kotlin.math.max
 
 class FcitxInputMethodService : LifecycleInputMethodService() {
@@ -324,6 +325,12 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                     }
                 }
             }
+            is FcitxEvent.InputPanelEvent -> {
+                val preeditText = event.data.preedit.toString()
+                if (preeditText.isNotEmpty()) {
+                    requestAiSuggestions(preeditText)
+                }
+            }
             else -> {}
         }
     }
@@ -441,6 +448,23 @@ class FcitxInputMethodService : LifecycleInputMethodService() {
                 commitText(text, 1)
                 setSelection(target, target)
             }
+        }
+    }
+
+    /**
+     * Called when InputPanelEvent brings a non-empty preedit (the current pinyin input).
+     * Attempts to retrieve AI suggestions from the aicompose plugin and inject them
+     * into the candidates view.
+     */
+    private fun requestAiSuggestions(preeditText: String) {
+        val suggestions = FcitxRemoteService.getInputSuggestions() ?: return
+        try {
+            val result = suggestions.getSuggestions(preeditText, 5)
+            if (result.isNotEmpty()) {
+                candidatesView?.injectSuggestions(result.toList())
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "requestAiSuggestions failed")
         }
     }
 

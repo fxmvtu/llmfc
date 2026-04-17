@@ -5,16 +5,25 @@
     <version>0.1.0</version>
     <package>org.fcitx.fcitx5.android.plugin.aicompose</package>
 
-    <!-- Entry point registered with Fcitx5 plugin system -->
-    <entry>org.fcitx.fcitx5.android.plugin.aicompose.AIComposePlugin</entry>
+    <!-- API version — must match PluginDescriptor.pluginAPI in the app -->
+    <apiVersion>0.1</apiVersion>
 
-    <!-- Native library -->
+    <!--
+      hasService=true tells the app to bind to this plugin at startup,
+      so IInputSuggestions can be registered with FcitxRemoteService.
+    -->
+    <hasService>true</hasService>
+
+    <!-- Entry point: MainService (FcitxPluginService) -->
+    <entry>org.fcitx.fcitx5.android.plugin.aicompose.MainService</entry>
+
+    <!-- Native library (contains llama.cpp linked as static lib) -->
     <lib>libaicompose.so</lib>
 
     <!--
       NOTE: llama.cpp is linked as a CMake library target (libllama.a) and is
       included in libaicompose.so via static linkage — no plugin.xml <depends>
-      entry is needed or valid here. <depends> in Fcitx5 refers to plugin names,
+      entry is needed or valid here. <depends> in Fcitx5 refers to addon plugin names,
       not CMake targets.
     -->
 </plugin>
