@@ -33,7 +33,12 @@
         <!-- 设置页 Activity -->
         <activity
             android:name=".ui.AIComposeSettingsActivity"
-            android:exported="false"
-            android:label="@string/settings_title" />
+            android:exported="true"
+            android:label="@string/settings_title">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>
