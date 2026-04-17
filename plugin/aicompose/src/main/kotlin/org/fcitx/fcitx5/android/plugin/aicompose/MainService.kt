@@ -127,6 +127,8 @@ class MainService : FcitxPluginService() {
      */
     private fun triggerSuggestion(pinyin: String) {
         if (!llamaEngine.isLoaded.value || pinyin.isBlank()) return
+        // Skip if same as last pinyin — avoids redundant inference on repeated triggers
+        if (pinyin == lastPinyin) return
 
         // Cancel any in-progress generation for previous pinyin
         engine.cancelCurrent()
@@ -163,6 +165,10 @@ class MainService : FcitxPluginService() {
     fun unloadModelFromSettings() {
         engine.destroy()
         llamaEngine.destroy()
+        suggestionLock.withLock {
+            cachedSuggestions = emptyArray()
+            lastPinyin = ""
+        }
     }
 
     // ─── Singleton (for Settings UI access) ─────────────────────────────────

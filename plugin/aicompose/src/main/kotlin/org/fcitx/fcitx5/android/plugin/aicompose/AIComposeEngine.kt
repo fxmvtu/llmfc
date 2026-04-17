@@ -121,10 +121,12 @@ class AIComposeEngine(
      */
     @PublishedApi
     internal fun normalizePinyin(raw: String): String {
+        // Tone numbers and spaces are rare in normal pinyin input (< 20 chars total),
+        // so the extra string scans from chained replace() are negligible.
         return raw
             .replace(" ", "")
             .replace(Regex("[1234]"), "")   // strip tone numbers
-            .replace("v", "u")              // nü/lü → nu/lu (LLM input)
+            .replace("v", "u")              // nü/lü → nu/lu for LLM
             .lowercase()
     }
 
