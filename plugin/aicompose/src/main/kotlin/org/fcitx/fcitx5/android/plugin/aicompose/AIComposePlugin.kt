@@ -25,28 +25,19 @@ class AIComposePlugin : FcitxPluginService() {
         super.onCreate()
         llamaEngine = LlamaEngine()
         engine = AIComposeEngine(llamaEngine)
+        sInstance = this
         Log.i(TAG, "AIComposePlugin created")
     }
 
     override fun start() {
-        // Called when the service is bound and the plugin should start providing
-        // functionality. The plugin is now ready to receive input via IPC.
         Log.i(TAG, "AIComposePlugin started")
     }
 
     override fun stop() {
-        // Called when the service is unbound. Clean up in-flight inference.
         engine.destroy()
         llamaEngine.destroy()
+        sInstance = null
         Log.i(TAG, "AIComposePlugin stopped")
-    }
-
-    /**
-     * Called by the settings UI (AIComposeSettingsActivity) when the user
-     * selects a model to load.
-     */
-    fun loadModel(modelPath: String, nCtx: Int = 2048, nThreads: Int = 4): Boolean {
-        return llamaEngine.loadModel(modelPath, nCtx, nThreads)
     }
 
     fun isModelLoaded(): Boolean = llamaEngine.isLoaded.value
@@ -60,10 +51,33 @@ class AIComposePlugin : FcitxPluginService() {
             ?: emptyList()
     }
 
-    // ─── Companion ───────────────────────────────────────────────────────────
+    /** Called by SettingsActivity to unload model from the singleton instance. */
+    fun unloadModelFromSettings() {
+        engine.destroy()
+        llamaEngine.destroy()
+    }
+
+    // ─── Singleton (for Settings UI access) ─────────────────────────────────
 
     companion object {
         private const val TAG = "AIComposePlugin"
+        private var sInstance: AIComposePlugin? = null
+
+        fun isLoaded(): Boolean = sInstance?.isModelLoaded() == true
+
+        fun loadModelStatic(path: String, nCtx: Int, nThreads: Int): Boolean =
+            sInstance?.loadModel(path, nCtx, nThreads) == true
+
+        fun getAvailableModelsStatic(): List<ModelInfo> =
+            sInstance?.getAvailableModels() ?: emptyList()
+
+        fun unloadModelStatic() {
+            sInstance?.unloadModelFromSettings()
+        }
+    }
+
+    private fun loadModel(modelPath: String, nCtx: Int, nThreads: Int): Boolean {
+        return llamaEngine.loadModel(modelPath, nCtx, nThreads)
     }
 }
 
