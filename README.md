@@ -1,5 +1,5 @@
 # LLMFC — 端侧大模型输入法
-
+# 注意这不能用，是ai生成的玩具~~垃圾~~
 基于 [fcitx5-android](https://github.com/fcitx5-android/fcitx5-android) + [llama.cpp](https://github.com/ggerganov/llama.cpp) 构建的 Android 输入法，支持端侧 GGUF 大模型实时补全。
 
 **特性**
